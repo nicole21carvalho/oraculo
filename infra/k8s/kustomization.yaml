@@ -1,0 +1,31 @@
+# Aplica tudo com: kubectl apply -k infra/k8s
+# (antes, crie o Secret: veja infra/k8s/README.md)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: oraculo
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: oraculo
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - redis.yaml
+  - ollama.yaml
+  - api.yaml
+  - web.yaml
+  - ingress.yaml
+  - network-policies.yaml
+
+# As imagens sao publicadas no GitHub Container Registry pelo CI a cada push
+# na main. Para fixar uma versao: kustomize edit set image ...=...:<sha>
+images:
+  - name: oraculo-api
+    newName: ghcr.io/nicole21carvalho/oraculo-api
+    newTag: latest
+  - name: oraculo-web
+    newName: ghcr.io/nicole21carvalho/oraculo-web
+    newTag: latest

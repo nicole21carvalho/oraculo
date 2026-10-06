@@ -1,0 +1,45 @@
+# PR semanal quando sai versao nova. Sem isto, as actions fixadas por SHA e as
+# dependencias travadas nos lockfiles envelheceriam em silencio.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      # Os pacotes do LangChain sobem juntos; separados, um PR quebraria o outro.
+      langchain:
+        patterns: ["langchain*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      next:
+        patterns: ["next", "eslint-config-next", "react", "react-dom", "@types/react*"]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+    ignore:
+      # Node so em versao LTS. A troca de versao maior e feita a mao, aqui e
+      # no CI ao mesmo tempo.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly

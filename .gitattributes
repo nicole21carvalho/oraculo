@@ -1,0 +1,11 @@
+# Texto sempre com LF no repositorio e no disco, em qualquer sistema. Com CRLF,
+# scripts e configs copiados para as imagens Linux quebram de jeitos dificeis
+# de achar (o "sh\r: not found" e o classico).
+* text=auto eol=lf
+
+# Binarios: nunca converter quebra de linha, ou o arquivo corrompe.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

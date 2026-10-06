@@ -1,0 +1,156 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# O GITHUB_TOKEN so le o codigo. So o job de publicacao ganha permissao de
+# escrever pacotes, e so ele: uma action comprometida em outro job nao publica nada.
+permissions:
+  contents: read
+
+# Actions fixadas por SHA do commit, e nao por tag: tag pode ser movida para
+# outro codigo depois (foi assim no ataque ao tj-actions/changed-files em
+# 2025); SHA nao. O comentario diz a versao, e o Dependabot abre PR quando
+# sai versao nova.
+
+jobs:
+  backend:
+    name: Back-end · lint, tipos e testes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Instalar dependencias
+        # --frozen: falha se o uv.lock nao bater com o pyproject.toml, em vez
+        # de resolver versoes novas em silencio.
+        run: uv sync --frozen
+
+      - name: Lint (Ruff)
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Tipos (mypy strict)
+        run: uv run mypy src tests avaliacao
+
+      - name: Testes (pytest + Testcontainers com pgvector)
+        run: uv run pytest
+
+  frontend:
+    name: Front-end · lint, tipos, testes e build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  kubernetes:
+    name: Kubernetes · manifestos validos
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSAO: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Instalar kubeconform
+        run: |
+          curl -sSfL -o kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSAO}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum --check --strict
+          tar -xzf kubeconform.tar.gz kubeconform
+
+      - name: Validar contra o schema oficial
+        # -strict: campo com nome errado (ex.: "replica" em vez de "replicas")
+        # falha aqui, e nao em silencio no cluster.
+        run: kubectl kustomize infra/k8s | ./kubeconform -strict -summary -
+
+  vulnerabilidades:
+    name: Dependências com vulnerabilidade conhecida
+    runs-on: ubuntu-latest
+    env:
+      OSV_VERSAO: v2.6.0
+      OSV_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Instalar osv-scanner
+        run: |
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSAO}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --strict
+          chmod +x osv-scanner
+
+      - name: Back-end (uv.lock)
+        run: ./osv-scanner scan source -L backend/uv.lock
+
+      - name: Front-end (package-lock.json)
+        run: ./osv-scanner scan source -L frontend/package-lock.json
+
+  imagens:
+    name: Imagens Docker · build e publicação
+    runs-on: ubuntu-latest
+    # So constroi imagem se tudo passou.
+    needs: [backend, frontend, kubernetes, vulnerabilidades]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        imagem: [api, web]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Entrar no GitHub Container Registry
+        # Em pull request so constroi: codigo de PR nao publica imagem.
+        if: github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags da imagem
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/oraculo-${{ matrix.imagem }}
+          # sha: cada imagem rastreavel ate o commit; latest: a mais recente da main.
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.imagem == 'api' && 'backend' || 'frontend' }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache das camadas no proprio GitHub Actions: o segundo build so
+          # refaz as camadas que mudaram.
+          cache-from: type=gha,scope=${{ matrix.imagem }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.imagem }}

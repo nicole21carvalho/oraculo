@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+spec:
+  serviceName: ollama
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Baixa os modelos antes do Ollama atender. Fica no volume: so baixa
+      # de novo se o volume for apagado.
+      initContainers:
+        - name: baixar-modelos
+          image: ollama/ollama:0.35.1
+          command: ["sh", "-c"]
+          args:
+            - |
+              ollama serve & sleep 5
+              ollama pull nomic-embed-text
+              ollama pull "$ORACULO_MODELO_CHAT"
+          env:
+            - name: HOME
+              value: /modelos
+            - name: OLLAMA_MODELS
+              value: /modelos/models
+            - name: ORACULO_MODELO_CHAT
+              valueFrom:
+                configMapKeyRef:
+                  name: oraculo-config
+                  key: ORACULO_MODELO_CHAT
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: modelos
+              mountPath: /modelos
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.35.1
+          ports:
+            - containerPort: 11434
+          env:
+            - name: HOME
+              value: /modelos
+            - name: OLLAMA_MODELS
+              value: /modelos/models
+            - name: OLLAMA_KEEP_ALIVE
+              value: 30m
+            - name: OLLAMA_NUM_PARALLEL
+              value: "1"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 11434
+            periodSeconds: 10
+          resources:
+            # Um modelo de 3B ocupa ~3 GB carregado. Com GPU, adicione
+            # nvidia.com/gpu: 1 nos limits e use um no com placa de video.
+            requests: { cpu: "2", memory: 4Gi }
+            limits: { memory: 6Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: modelos
+              mountPath: /modelos
+  volumeClaimTemplates:
+    - metadata:
+        name: modelos
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+spec:
+  selector:
+    app: ollama
+  ports:
+    - port: 11434

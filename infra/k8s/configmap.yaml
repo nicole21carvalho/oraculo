@@ -1,0 +1,11 @@
+# Configuracao que nao e segredo. Senha e chave do JWT ficam no Secret
+# "oraculo-segredos", que nao vai para o repositorio.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oraculo-config
+data:
+  ORACULO_REDIS_URL: redis://redis:6379/0
+  ORACULO_OLLAMA_URL: http://ollama:11434
+  ORACULO_MODELO_CHAT: llama3.2:3b
+  ORACULO_MODELO_EMBEDDINGS: nomic-embed-text

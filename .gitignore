@@ -1,0 +1,29 @@
+# Segredos
+.env
+.env*.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Sistema e editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Instrucoes para assistentes de codigo que o "next dev" recria sozinho.
+# Ficam so na maquina, fora do repositorio.
+frontend/AGENTS.md
+frontend/CLAUDE.md

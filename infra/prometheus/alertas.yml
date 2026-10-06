@@ -1,0 +1,39 @@
+groups:
+  - name: oraculo
+    rules:
+      - alert: ApiForaDoAr
+        expr: up{job="oraculo-api"} == 0
+        for: 1m
+        labels:
+          severidade: critica
+        annotations:
+          resumo: "A API do Oráculo não responde há mais de 1 minuto"
+
+      - alert: MuitosErros5xx
+        # Mais de 5% das requisicoes com erro do servidor nos ultimos 5 minutos.
+        expr: |
+          sum(rate(http_requests_total{job="oraculo-api", status="5xx"}[5m]))
+            / sum(rate(http_requests_total{job="oraculo-api"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severidade: alta
+        annotations:
+          resumo: "Mais de 5% das requisições estão falhando"
+
+      - alert: IaLenta
+        # p95: 95% das respostas terminam abaixo deste tempo.
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(oraculo_tempo_resposta_ia_segundos_bucket[10m]))) > 60
+        for: 10m
+        labels:
+          severidade: media
+        annotations:
+          resumo: "O modelo de IA está levando mais de 60 s para responder (p95)"
+
+      - alert: FalhasDaIa
+        expr: increase(oraculo_perguntas_total{resultado="erro"}[10m]) > 3
+        labels:
+          severidade: alta
+        annotations:
+          resumo: "O modelo de IA falhou em mais de 3 perguntas nos últimos 10 minutos"

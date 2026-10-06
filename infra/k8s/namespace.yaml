@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oraculo
+  labels:
+    # Recusa pod que rode como root, monte o disco do no ou ganhe privilegio.
+    pod-security.kubernetes.io/enforce: restricted

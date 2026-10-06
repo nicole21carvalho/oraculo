@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+/* Paleta propria em tokens: as cores mudam aqui, e nao componente por componente. */
+@theme {
+  --color-fundo: #0f0d17;
+  --color-painel: #17141f;
+  --color-cartao: #201c2b;
+  --color-borda: #2e2940;
+  --color-texto: #ece9f5;
+  --color-suave: #a29cb8;
+  --color-destaque: #a78bfa;
+  --color-destaque-forte: #7c3aed;
+  --color-sucesso: #34d399;
+  --color-alerta: #fbbf24;
+  --color-perigo: #f87171;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-fundo);
+  color: var(--color-texto);
+}
+
+/* O cursor piscando enquanto o modelo escreve. */
+@keyframes piscar {
+  50% {
+    opacity: 0;
+  }
+}
+.cursor-escrevendo::after {
+  content: "▍";
+  margin-left: 2px;
+  color: var(--color-destaque);
+  animation: piscar 1s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor-escrevendo::after {
+    animation: none;
+  }
+}

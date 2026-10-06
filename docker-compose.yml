@@ -1,0 +1,185 @@
+# Sobe tudo com: docker compose up -d
+# Com Prometheus e Grafana: docker compose --profile monitoramento up -d
+
+# Endurecimento aplicado aos containers que aceitam (o "<<: *seguro" abaixo):
+# - no-new-privileges: nenhum processo dentro ganha mais privilegio que o
+#   container tem (bloqueia escalada por binario setuid);
+# - cap_drop ALL: tira todas as capacidades especiais do Linux (mexer na rede,
+#   mudar dono de arquivo, etc.), que a aplicacao nao usa.
+x-seguro: &seguro
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg17
+    # Sem cap_drop: o entrypoint do Postgres comeca como root para ajustar o
+    # dono da pasta de dados e depois troca para o usuario "postgres".
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: oraculo
+      POSTGRES_USER: oraculo
+      # Vem do .env. Senha fixa aqui seria a mesma em toda maquina que
+      # clonasse o repositorio.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env (openssl rand -hex 24)}
+    volumes:
+      # Volume nomeado: sem isto o banco zera a cada "docker compose down".
+      - dados_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oraculo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    <<: *seguro
+    user: "999:999"
+    read_only: true
+    # So guarda contadores de limite de uso, que valem um minuto: nao ha o que
+    # salvar em disco.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:0.35.1
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Mantem os modelos na memoria entre perguntas; carregar do disco a
+      # cada pergunta somaria segundos na resposta.
+      OLLAMA_KEEP_ALIVE: 30m
+      # Uma resposta por vez: em CPU, respostas em paralelo dividem a mesma
+      # maquina e todas ficam lentas, alem de dobrar o uso de memoria.
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      # Os modelos tem gigabytes: ficam no volume para baixar uma vez so.
+      - modelos_ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Roda uma vez, baixa os modelos, carrega o de conversa na memoria e termina.
+  # A API so sobe depois disso. Sem o "ollama run" de aquecimento, a primeira
+  # pergunta esperava mais de 2 minutos o modelo sair do disco.
+  ollama-modelos:
+    image: ollama/ollama:0.35.1
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        ollama pull nomic-embed-text &&
+        ollama pull ${ORACULO_MODELO_CHAT:-llama3.2:3b} &&
+        ollama run ${ORACULO_MODELO_CHAT:-llama3.2:3b} "ok" > /dev/null
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: ./backend
+    <<: *seguro
+    # Disco do container somente leitura: quem explorar uma falha na API nao
+    # consegue gravar nem trocar arquivo do sistema ou da aplicacao.
+    read_only: true
+    tmpfs:
+      # Upload maior que 1 MB passa por um arquivo temporario.
+      - /tmp:size=64m
+    environment:
+      ORACULO_DATABASE_URL: postgresql+psycopg://oraculo:${DB_PASSWORD}@db:5432/oraculo
+      ORACULO_REDIS_URL: redis://redis:6379/0
+      ORACULO_JWT_SECRET: ${ORACULO_JWT_SECRET:?defina ORACULO_JWT_SECRET no .env (openssl rand -base64 48)}
+      ORACULO_OLLAMA_URL: http://ollama:11434
+      ORACULO_MODELO_CHAT: ${ORACULO_MODELO_CHAT:-llama3.2:3b}
+    # Sem "ports" de proposito: a API so e alcancavel pela rede interna, pelo
+    # nginx. Assim /metrics e /docs nao ficam expostos para fora.
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/api/saude/pronto')
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama-modelos:
+        condition: service_completed_successfully
+
+  web:
+    build: ./frontend
+    <<: *seguro
+    read_only: true
+    tmpfs:
+      # O nginx grava PID e arquivos temporarios aqui.
+      - /tmp:size=32m
+    ports:
+      # 127.0.0.1: so este computador abre o Oraculo. Com "3000:8080", qualquer
+      # aparelho na mesma rede Wi-Fi tambem chegaria na tela de login.
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+        # O nginx resolve o nome "api" uma vez, ao subir. Se a API for
+        # recriada (novo build), ela ganha outro IP e o nginx devolveria 502
+        # ate reiniciar; com isto, o compose reinicia o web junto. No
+        # Kubernetes nao acontece: o IP do Service nao muda.
+        restart: true
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    profiles: [monitoramento]
+    <<: *seguro
+    volumes:
+      # Pasta inteira: a configuracao e as regras de alerta.
+      - ./infra/prometheus:/etc/prometheus:ro
+    ports:
+      # 127.0.0.1: painel de monitoramento so na propria maquina, nunca na rede.
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:13.2
+    profiles: [monitoramento]
+    <<: *seguro
+    environment:
+      # Painel so de leitura e sem login. Os paineis sao codigo (JSON em
+      # infra/grafana) e mudam por commit, e nao clicando na interface. Com o
+      # login desligado, ninguem entra como admin com a senha padrao "admin".
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/oraculo.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  dados_postgres:
+  modelos_ollama:

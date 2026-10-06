@@ -1,0 +1,11 @@
+# Excecoes do osv-scanner no CI. Cada uma com motivo e prazo: no prazo, o CI
+# volta a falhar e obriga a olhar de novo.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2027-01-04
+reason = """\
+braces (todas as versoes) entra so pelo eslint-config-next, ferramenta de \
+desenvolvimento que nao vai para a imagem final. O ataque exige padrao de \
+glob controlado por quem ataca; o lint so usa os padroes do proprio projeto. \
+Nao existe versao corrigida do braces ate esta data."""

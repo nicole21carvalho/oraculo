@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  # Duas replicas: uma atualizacao ou uma falha num no nao derruba a API.
+  replicas: 2
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: oraculo-api
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: oraculo-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oraculo-segredos
+                  key: DB_PASSWORD
+            - name: ORACULO_DATABASE_URL
+              value: postgresql+psycopg://oraculo:$(DB_PASSWORD)@db:5432/oraculo
+            - name: ORACULO_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oraculo-segredos
+                  key: ORACULO_JWT_SECRET
+          # Liveness so ve se o processo responde; readiness ve as dependencias.
+          # Banco fora do ar tira o pod do balanceamento, mas nao o reinicia.
+          livenessProbe:
+            httpGet:
+              path: /api/saude
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/saude/pronto
+              port: 8000
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 768Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # Upload maior que 1 MB vai para um arquivo temporario; com o
+            # disco do container somente leitura, /tmp precisa ser um volume.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 8000
+---
+# Mais replicas quando a CPU passa de 70%. A parte pesada (o modelo) fica no
+# Ollama; a API escala para atender mais conexoes de streaming ao mesmo tempo.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# Durante manutencao de no, pelo menos uma replica continua no ar.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api

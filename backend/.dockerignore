@@ -1,0 +1,9 @@
+.venv
+.mypy_cache
+.ruff_cache
+.pytest_cache
+__pycache__
+tests
+# Nenhum arquivo de ambiente entra na imagem: os segredos chegam por
+# variavel de ambiente na hora de rodar, e nao ficam gravados nas camadas.
+.env*

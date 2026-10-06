@@ -1,0 +1,7 @@
+node_modules
+.next
+out
+# Nenhum arquivo de ambiente entra na imagem: a interface nao tem segredo,
+# e um .env esquecido na pasta nao vaza para o registry por engano.
+.env*
+npm-debug.log*

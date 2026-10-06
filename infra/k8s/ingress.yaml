@@ -1,0 +1,37 @@
+# Entrada HTTPS do cluster. O nginx do pod "web" ja repassa /api para a API;
+# o Ingress so precisa entregar tudo ao "web".
+#
+# As anotacoes sao do controlador ingress-nginx. Ele foi aposentado pelo
+# projeto Kubernetes em 2026 e nao recebe mais correcoes de seguranca: num
+# cluster novo, prefira um controlador mantido (Traefik, NGINX Gateway Fabric,
+# Envoy Gateway) e traduza as tres configuracoes abaixo para ele.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oraculo
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 21m
+    # Streaming da resposta da IA: sem buffer e com tempo de leitura longo.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    # Com o cert-manager instalado, o certificado e emitido e renovado sozinho.
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  # So HTTPS: o cookie de sessao e marcado Secure e nao viaja por HTTP. Com
+  # TLS configurado, o controlador redireciona HTTP para HTTPS e envia HSTS.
+  tls:
+    - hosts:
+        - oraculo.local
+      secretName: oraculo-tls
+  rules:
+    - host: oraculo.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8080
