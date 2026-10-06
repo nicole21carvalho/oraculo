@@ -23,6 +23,14 @@ updates:
     groups:
       next:
         patterns: ["next", "eslint-config-next", "react", "react-dom", "@types/react*"]
+    ignore:
+      # A versao maior do TypeScript e ditada pelo Next.js, que ainda nao
+      # aceita o TypeScript 7. Sobe junto com a atualizacao do Next.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Os tipos acompanham a versao do Node que roda o projeto (24, LTS).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /backend
