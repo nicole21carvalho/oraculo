@@ -23,13 +23,13 @@
 
 ---
 
-## O problema
+## 🎯 O problema
 
 Edital de concurso, contrato, regulamento, manual técnico: a resposta está lá, mas no meio de 80 páginas. Um chat de IA comum responde rápido, mas **inventa** quando não sabe, e não diz de onde tirou a informação.
 
 O Oráculo usa **RAG (Retrieval-Augmented Generation)**: antes de responder, ele busca nos *seus* documentos os trechos que tratam da pergunta e entrega só esses trechos ao modelo, com a ordem de responder apenas com base neles e citar a fonte. Se nenhum trecho tratar do assunto, ele diz que não encontrou, sem inventar.
 
-## Como funciona
+## ⚙️ Como funciona
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ flowchart LR
 
 Tudo roda **localmente**, com modelos abertos no Ollama: os documentos nunca saem da máquina e não há custo por pergunta.
 
-## Stack
+## 🧱 Stack
 
 | Área | Tecnologias |
 |---|---|
@@ -62,7 +62,7 @@ Tudo roda **localmente**, com modelos abertos no Ollama: os documentos nunca sae
 | ✅ **Qualidade** | pytest · Testcontainers · Vitest · Testing Library · Ruff · mypy (strict) · ESLint |
 | 🚀 **DevOps** | Docker (multi-stage, sem root) · Docker Compose · nginx · GitHub Actions (CI/CD) · GHCR · Kubernetes + Kustomize · HPA · NetworkPolicy · Prometheus · Grafana · Dependabot · osv-scanner |
 
-## Decisões técnicas
+## 🧠 Decisões técnicas
 
 As escolhas que mais pesaram no resultado, e o porquê de cada uma.
 
@@ -84,7 +84,7 @@ As escolhas que mais pesaram no resultado, e o porquê de cada uma.
 
 **9. Migração segura com várias réplicas.** Cada réplica da API roda `alembic upgrade` ao subir. No Kubernetes, duas réplicas sobem juntas e tentariam criar a mesma tabela ao mesmo tempo. Uma *advisory lock* do Postgres faz a segunda esperar a primeira terminar.
 
-## Avaliação da busca
+## 📊 Avaliação da busca
 
 [`backend/avaliacao/avaliar_busca.py`](backend/avaliacao/avaliar_busca.py) roda 12 perguntas de resposta conhecida sobre o [edital de exemplo](docs/exemplos/edital-exemplo.pdf) (fictício) e 4 perguntas sem relação com ele, usando o modelo de embeddings real:
 
@@ -101,7 +101,7 @@ O que os números mostraram:
 - **Nenhum limite fixo separa "tem resposta" de "não tem".** A pergunta sem relação com nota mais alta (0,615) passou da pergunta certa com nota mais baixa (0,609). Por isso o limite (0,55) só descarta o que claramente não tem relação, e a decisão final de dizer "não encontrei" fica com o modelo, instruído no prompt. No teste real, ele acertou essa decisão.
 - **O próximo passo tem dado para justificar:** um *reranker* (modelo que compara pergunta e trecho juntos) dá notas bem mais separadas que a similaridade de embeddings. Está em [Próximos passos](#próximos-passos).
 
-## Segurança
+## 🔒 Segurança
 
 Resumo abaixo; detalhes, limites conhecidos e como relatar uma falha em [SECURITY.md](SECURITY.md).
 
@@ -117,7 +117,7 @@ Resumo abaixo; detalhes, limites conhecidos e como relatar uma falha em [SECURIT
 - Containers **sem root**, com `no-new-privileges`, `cap_drop: ALL` e disco somente leitura; a interface só aceita conexões do próprio computador (`127.0.0.1`). No Kubernetes: Pod Security `restricted`, **NetworkPolicy** que só deixa a API falar com o banco, e TLS no Ingress.
 - CI com **actions fixadas por SHA**, permissões mínimas no token, varredura de vulnerabilidades (osv-scanner) que bloqueia o merge e Dependabot semanal.
 
-## Rodando
+## 🚀 Rodando
 
 Precisa só de **Docker**. Na primeira vez, o Ollama baixa os modelos (~2,3 GB).
 
@@ -165,7 +165,7 @@ npm run dev
 Para acessar o banco e o Redis a partir da máquina, publique as portas deles num `docker-compose.override.yml`.
 </details>
 
-### Testes
+### 🧪 Testes
 
 ```bash
 cd backend && uv run pytest                 # 31 testes; sobe um Postgres + pgvector real (Testcontainers)
@@ -174,7 +174,7 @@ cd frontend && npm test                     # 8 testes (Vitest + Testing Library
 
 Os testes do back-end usam um banco de verdade, e não um banco em memória, porque a busca depende do operador de distância e do índice HNSW do pgvector. Os modelos de IA são substituídos por versões falsas e determinísticas: o teste não depende de rede e dá sempre o mesmo resultado.
 
-## API
+## 🔌 API
 
 Documentação interativa (Swagger) em `/docs` quando a API roda localmente.
 
@@ -192,7 +192,7 @@ Documentação interativa (Swagger) em `/docs` quando a API roda localmente.
 | `POST` | `/api/perguntas/stream` | Mesma coisa, em tempo real (Server-Sent Events) |
 | `GET` | `/api/saude` · `/api/saude/pronto` | Liveness e readiness, usados pelo Kubernetes |
 
-## Estrutura
+## 📁 Estrutura
 
 ```
 oraculo/
@@ -219,7 +219,7 @@ oraculo/
 └── docker-compose.yml
 ```
 
-## Próximos passos
+## 🗺️ Próximos passos
 
 - **OCR** para PDFs digitalizados (hoje eles são recusados com uma mensagem clara).
 - **Reranking** dos trechos com um modelo *cross-encoder* antes de enviar ao LLM. A [avaliação](#avaliação-da-busca) mostrou que a similaridade de embeddings sozinha não separa bem as perguntas com e sem resposta.
