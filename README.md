@@ -122,8 +122,8 @@ Resumo abaixo; detalhes, limites conhecidos e como relatar uma falha em [SECURIT
 Precisa só de **Docker**. Na primeira vez, o Ollama baixa os modelos (~2,3 GB).
 
 ```bash
-git clone https://github.com/nicole21carvalho/oraculo.git
-cd oraculo
+git clone https://github.com/nicole21carvalho/rag-pdf-chat-citations.git
+cd rag-pdf-chat-citations
 cp .env.example .env
 # preencha ORACULO_JWT_SECRET e DB_PASSWORD no .env (os comandos estão no arquivo)
 docker compose up -d
